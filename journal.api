@@ -1,0 +1,143 @@
+syntax = "v1"
+
+info (
+	title:   "Journal API"
+	desc:    "日记管理系统后端 API，提供登录鉴权、日记 CRUD 与统计能力"
+	author:  "journal"
+	version: "v1"
+)
+
+type (
+	// LoginReq 登录请求
+	LoginReq {
+		Username string `json:"username"` // 账号（邮箱或用户名）
+		Password string `json:"password"` // 密码
+	}
+	// LoginResp 登录响应
+	LoginResp {
+		Token string `json:"token"` // JWT 访问令牌，后续请求放在 Authorization: Bearer <token>
+	}
+	// JournalPost 日记条目
+	JournalPost {
+		Id        string   `json:"id"` // 日记 ID（UUID）
+		Title     string   `json:"title"` // 标题
+		Content   string   `json:"content"` // 正文（Markdown）
+		Date      string   `json:"date"` // 日记日期，格式 YYYY-MM-DD
+		Mood      string   `json:"mood"` // 心情：great / good / calm / low
+		Tags      []string `json:"tags"` // 标签列表
+		Pinned    bool     `json:"pinned"` // 是否置顶
+		UpdatedAt string   `json:"updatedAt"` // 最后编辑时间，格式 YYYY-MM-DD HH:mm
+	}
+	// ListJournalPostsReq 日记列表查询参数
+	ListJournalPostsReq {
+		Q          string `form:"q,optional"` // 关键词，匹配标题/正文/标签/心情
+		Tag        string `form:"tag,optional"` // 按标签筛选
+		Mood       string `form:"mood,optional"` // 按心情筛选，传 all 或不传表示全部
+		DateFilter string `form:"dateFilter,optional"` // 时间范围：all / week（近 7 天）/ month（近 30 天）
+		Page       int    `form:"page,optional,default=1"` // 页码，从 1 开始
+		PageSize   int    `form:"pageSize,optional,default=20"` // 每页条数
+	}
+	// ListJournalPostsResp 日记列表响应
+	ListJournalPostsResp {
+		List     []JournalPost `json:"list"` // 当前页数据
+		Total    int64         `json:"total"` // 符合条件的总条数
+		Page     int           `json:"page"` // 当前页码
+		PageSize int           `json:"pageSize"` // 每页条数
+	}
+	// CreateJournalPostReq 新建日记请求
+	CreateJournalPostReq {
+		Title   string   `json:"title,optional"` // 标题，不传则自动生成
+		Content string   `json:"content,optional"` // 正文
+		Date    string   `json:"date,optional"` // 日记日期，不传则默认今天
+		Mood    string   `json:"mood,optional"` // 心情，不传则默认 calm
+		Tags    []string `json:"tags,optional"` // 标签
+		Pinned  bool     `json:"pinned,optional"` // 是否置顶
+	}
+	// UpdateJournalPostReq 更新日记请求（全量提交当前编辑内容）
+	UpdateJournalPostReq {
+		Title   string   `json:"title,optional"` // 标题
+		Content string   `json:"content,optional"` // 正文，可为空字符串
+		Date    string   `json:"date,optional"` // 日记日期
+		Mood    string   `json:"mood,optional"` // 心情
+		Tags    []string `json:"tags,optional"` // 标签
+		Pinned  *bool    `json:"pinned,optional"` // 是否置顶，指针类型用于区分未传与 false
+	}
+	// IdPathReq 路径参数
+	IdPathReq {
+		Id string `path:"id"` // 日记 ID
+	}
+	// StatsResp 日记统计
+	StatsResp {
+		MonthCount   int64  `json:"monthCount"` // 本月日记篇数
+		AverageWords int64  `json:"averageWords"` // 全库平均字数（去空白后）
+		TopTag       string `json:"topTag"` // 使用最多的标签
+		TotalCount   int64  `json:"totalCount"` // 日记总篇数
+	}
+)
+
+// 公开接口，无需 JWT
+@server (
+	prefix:     /api/v1
+	group:      public
+	middleware: Cors
+)
+service journal {
+	@doc (
+		summary:     "用户登录"
+		description: "校验账号密码，成功后返回 JWT Token，用于访问受保护的日记接口"
+	)
+	@handler login
+	post /login (LoginReq) returns (LoginResp)
+}
+
+// 日记接口，需要 JWT + CORS
+@server (
+	prefix:     /api/v1
+	group:      journalpost
+	jwt:        Auth
+	middleware: Cors
+)
+service journal {
+	@doc (
+		summary:     "日记列表"
+		description: "分页查询当前用户的日记，支持关键词、标签、心情、时间范围筛选；置顶日记优先，再按日期倒序"
+	)
+	@handler listJournalPosts
+	get /journal-posts (ListJournalPostsReq) returns (ListJournalPostsResp)
+
+	@doc (
+		summary:     "新建日记"
+		description: "创建一篇新日记，未传字段会使用默认值（如今日日期、calm 心情、自动标题）"
+	)
+	@handler createJournalPost
+	post /journal-posts (CreateJournalPostReq) returns (JournalPost)
+
+	@doc (
+		summary:     "日记详情"
+		description: "根据 ID 获取单篇日记，只能访问当前登录用户自己的数据"
+	)
+	@handler getJournalPost
+	get /journal-posts/:id (IdPathReq) returns (JournalPost)
+
+	@doc (
+		summary:     "更新日记"
+		description: "更新标题、正文、日期、心情、标签、置顶状态；前端编辑时通常全量提交当前内容"
+	)
+	@handler updateJournalPost
+	put /journal-posts/:id (UpdateJournalPostReq) returns (JournalPost)
+
+	@doc (
+		summary:     "删除日记"
+		description: "永久删除指定日记，成功时返回 HTTP 204，无响应体"
+	)
+	@handler deleteJournalPost
+	delete /journal-posts/:id (IdPathReq)
+
+	@doc (
+		summary:     "日记统计"
+		description: "返回本月篇数、平均字数、最常用标签、总篇数等概览数据"
+	)
+	@handler getStats
+	get /stats returns (StatsResp)
+}
+

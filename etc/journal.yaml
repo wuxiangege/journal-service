@@ -1,0 +1,22 @@
+Name: journal
+Host: 0.0.0.0
+Port: 8080
+Timeout: 30000
+
+# 鉴权
+Auth:
+  AccessSecret: journal-dev-secret-change-in-production
+  AccessExpire: 604800
+
+# 数据库
+MySQL:
+  DataSource: root:password@tcp(127.0.0.1:3307)/journal?charset=utf8mb4&parseTime=True&loc=Local
+  LogSQL: true
+
+# 跨域
+Cors:
+  AllowOrigins:
+    - http://localhost:8080
+    - http://127.0.0.1:8080
+    - http://localhost:5173
+    - http://127.0.0.1:5173
